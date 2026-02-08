@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>تسجيل حضور الطلاب QR مشفّر (Local)</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    body{margin:0;background:#0b1220;color:#e8eefc}
+    .wrap{max-width:1200px;margin:0 auto;padding:22px}
+    h1{margin:0 0 12px;font-size:22px}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    @media(min-width:1050px){.grid{grid-template-columns:1.1fr .9fr}}
+    .card{background:#121a2b;border:1px solid #22304e;border-radius:16px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+    .card h2{margin:0 0 12px;font-size:18px}
+    label{display:block;margin:10px 0 6px;color:#c9d6ff;font-size:13px}
+    input,select,textarea{
+      width:100%;box-sizing:border-box;background:#0b1220;color:#e8eefc;
+      border:1px solid #22304e;border-radius:12px;padding:10px 12px;outline:none
+    }
+    textarea{min-height:92px;resize:vertical}
+    .row{display:grid;grid-template-columns:1fr;gap:10px}
+    @media(min-width:520px){.row{grid-template-columns:1fr 1fr}}
+    .btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+    button{
+      border:0;border-radius:12px;padding:10px 14px;cursor:pointer;
+      background:#2b65ff;color:white;font-weight:700
+    }
+    button.secondary{background:#26324f}
+    button.danger{background:#ff3b3b}
+    button.ok{background:#1fbf75}
+    .hint{opacity:.85;font-size:12px;margin-top:10px;line-height:1.7}
+    .qrbox{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+    #qr{background:white;border-radius:12px;padding:10px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+    .status{margin-top:10px;padding:10px;border-radius:12px;border:1px dashed #22304e;background:#0b1220}
+    .okBorder{border-color:#1fd17a}
+    .badBorder{border-color:#ff7777}
+    .small{font-size:12px;opacity:.95}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b1220;border:1px solid #22304e;font-size:12px}
+    .tableWrap{overflow:auto;border:1px solid #22304e;border-radius:14px}
+    table{width:100%;border-collapse:collapse;min-width:920px}
+    th,td{padding:10px;border-bottom:1px solid #22304e;text-align:right;vertical-align:top}
+    th{background:#0b1220;color:#cfe0ff;position:sticky;top:0}
+    .muted{opacity:.8}
+    .split{display:grid;grid-template-columns:1fr;gap:12px}
+    @media(min-width:720px){.split{grid-template-columns:1fr 1fr}}
+    .rightTools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  </style>
+
+  <!-- QR Generator -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- AES (CryptoJS) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <!-- QR decode -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js"></script>
+</head>
+
+<body>
+<div class="wrap">
+  <h1>نظام تسجيل حضور الطلاب باستخدام QR مشفّر (بدون سيرفر — LocalStorage)</h1>
+
+  <div class="grid">
+
+    <!-- LEFT: Generator + Scanner -->
+    <div class="card">
+      <h2>إنشاء QR + المسح والتسجيل التلقائي</h2>
+
+      <div class="split">
+        <div>
+          <h3 style="margin:0 0 8px;font-size:15px" class="muted">A) بيانات الطالب لإنشاء QR</h3>
+
+          <div class="row">
+            <div>
+              <label>اسم الطالب</label>
+              <input id="studentName" placeholder="مثال: أحمد محمد" />
+            </div>
+            <div>
+              <label>كود / رقم جامعي</label>
+              <input id="studentId" placeholder="مثال: 20231234" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>القسم</label>
+              <input id="department" placeholder="مثال: نظم معلومات" />
+            </div>
+            <div>
+              <label>المستوى / الفرقة</label>
+              <input id="level" placeholder="مثال: الفرقة الثالثة" />
+            </div>
+          </div>
+
+          <label>ملاحظات (اختياري)</label>
+          <textarea id="notes" placeholder="أي بيانات إضافية..."></textarea>
+
+          <label>كلمة السر للتشفير (AES)</label>
+          <input id="passGen" type="password" placeholder="اكتب كلمة سر قوية" />
+
+          <div class="btns">
+            <button id="btnMake">إنشاء QR مشفّر</button>
+            <button class="secondary" id="btnCopy">نسخ النص المشفّر</button>
+            <button class="secondary" id="btnDownload">تحميل QR (PNG)</button>
+            <button class="danger" id="btnClearGen">مسح البيانات</button>
+          </div>
+
+          <div class="qrbox" style="margin-top:14px">
+            <div>
+              <div class="pill">QR Output</div>
+              <div id="qr" aria-label="QR code output"></div>
+            </div>
+            <div style="flex:1;min-width:260px">
+              <div class="pill">Encrypted Payload</div>
+              <div id="encOut" class="status mono small" style="word-break:break-all;min-height:90px">—</div>
+              <div class="hint">
+                هذا النص داخل الـ QR بعد التشفير. حافظ عليه قصيرًا لتجنب حدود الـ QR.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin:0 0 8px;font-size:15px" class="muted">B) إعدادات المحاضرة + الماسح</h3>
+
+          <div class="row">
+            <div>
+              <label>اسم المادة / المحاضرة (Course)</label>
+              <input id="course" placeholder="مثال: قواعد بيانات" />
+              <div class="hint">يُستخدم لمنع تكرار حضور نفس الطالب لنفس المحاضرة.</div>
+            </div>
+            <div>
+              <label>تاريخ الجلسة (Session Date)</label>
+              <input id="sessionDate" type="date" />
+              <div class="hint">افتراضيًا: تاريخ اليوم.</div>
+            </div>
+          </div>
+
+          <label>كلمة السر لفك التشفير (لازم نفس كلمة السر)</label>
+          <input id="passScan" type="password" placeholder="اكتب نفس كلمة السر" />
+
+          <div class="btns">
+            <button id="btnStartCam" class="ok">تشغيل الكاميرا</button>
+            <button id="btnStopCam" class="secondary">إيقاف الكاميرا</button>
+            <button id="btnManualDecrypt" class="secondary">فك تشفير يدويًا</button>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="pill">Camera Preview</div>
+            <div class="status" style="padding:10px">
+              <video id="video" playsinline style="width:100%;border-radius:12px;max-height:320px;background:#000"></video>
+              <canvas id="canvas" style="display:none"></canvas>
+              <div id="scanMsg" class="hint">سيتم تشغيل الكاميرا تلقائيًا عند فتح الصفحة (قد تحتاج HTTPS/localhost).</div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="pill">آخر نتيجة (فك تشفير + تسجيل حضور)</div>
+            <div id="decStatus" class="status mono small" style="min-height:140px;white-space:pre-wrap">—</div>
+          </div>
+
+          <label style="margin-top:12px">النص المشفّر (للفك اليدوي)</label>
+          <textarea id="manualCipher" class="mono" placeholder="الصق النص المشفّر هنا..."></textarea>
+
+          <div class="hint">
+            ⚠️ الكاميرا قد لا تعمل عند فتح الملف مباشرة (file://). الأفضل تشغيله عبر
+            <span class="mono">localhost</span> أو <span class="mono">https</span>.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Attendance Table + Export -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <h2 style="margin:0">سجل الحضور</h2>
+        <div class="rightTools">
+          <span class="pill" id="countPill">0 سجل</span>
+          <button class="secondary" id="btnExport">تصدير CSV</button>
+          <button class="danger" id="btnClearAttendance">مسح السجل</button>
+        </div>
+      </div>
+
+      <div class="hint" style="margin-top:10px">
+        منع التكرار: نفس الطالب (ID) لنفس <b>Course</b> ونفس <b>Session Date</b> لن يتم تسجيله مرتين.
+      </div>
+
+      <div class="tableWrap" style="margin-top:12px">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Student ID</th>
+              <th>الاسم</th>
+              <th>القسم</th>
+              <th>المستوى</th>
+              <th>Course</th>
+              <th>Session Date</th>
+              <th>وقت التسجيل</th>
+              <th>ملاحظات</th>
+              <th>إجراء</th>
+            </tr>
+          </thead>
+          <tbody id="attBody">
+            <tr><td colspan="10" class="muted">لا يوجد بيانات بعد.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="hint" style="margin-top:12px">
+        يتم الحفظ تلقائيًا في <b>LocalStorage</b> على نفس المتصفح.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // -------------------- Storage --------------------
+  const STORAGE_KEY = "qr_attendance_v1";
+
+  function loadAttendance() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveAttendance(list) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  }
+
+  let attendance = loadAttendance();
+
+  // -------------------- Helpers --------------------
+  function setStatus(el, text, kind) {
+    el.textContent = text;
+    el.classList.remove("okBorder", "badBorder");
+    if (kind === "ok") el.classList.add("okBorder");
+    if (kind === "bad") el.classList.add("badBorder");
+  }
+
+  function nowISO() {
+    const d = new Date();
+    return d.toISOString();
+  }
+
+  function formatLocalDateTime(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString("ar-EG");
+    } catch {
+      return iso;
+    }
+  }
+
+  function requiredField(value, msg) {
+    if (!value || !value.trim()) throw new Error(msg);
+    return value.trim();
+  }
+
+  function buildStudentPayload() {
+    const payloadObj = {
+      name: requiredField(studentName.value, "اكتب اسم الطالب."),
+      id: requiredField(studentId.value, "اكتب كود/رقم الطالب."),
+      department: (department.value || "").trim(),
+      level: (level.value || "").trim(),
+      notes: (notes.value || "").trim()
+    };
+    return payloadObj;
+  }
+
+  function encryptText(plain, pass) {
+    return CryptoJS.AES.encrypt(plain, pass).toString();
+  }
+
+  function decryptText(cipher, pass) {
+    const bytes = CryptoJS.AES.decrypt(cipher, pass);
+    const plain = bytes.toString(CryptoJS.enc.Utf8);
+    if (!plain) throw new Error("فشل فك التشفير. كلمة السر قد تكون خاطئة أو البيانات غير صحيحة.");
+    return plain;
+  }
+
+  function safeJsonParse(s) {
+    try { return { ok:true, value: JSON.parse(s) }; }
+    catch(e){ return { ok:false, error:e }; }
+  }
+
+  function normalizeKey(s) {
+    return (s || "").trim().toLowerCase();
+  }
+
+  function getCourse() {
+    return requiredField(course.value, "اكتب اسم المادة/المحاضرة (Course) لتسجيل الحضور.");
+  }
+
+  function getSessionDate() {
+    return requiredField(sessionDate.value, "اختَر تاريخ الجلسة (Session Date).");
+  }
+
+  function getScanPass() {
+    return requiredField(passScan.value, "اكتب كلمة السر لفك التشفير.");
+  }
+
+  // -------------------- QR Generator --------------------
+  let qrInstance = null;
+
+  function renderQR(text) {
+    qr.innerHTML = "";
+    qrInstance = new QRCode(qr, {
+      text,
+      width: 220,
+      height: 220,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }
+
+  btnMake.addEventListener("click", () => {
+    try {
+      const pass = requiredField(passGen.value, "اكتب كلمة السر للتشفير.");
+      const obj = buildStudentPayload();
+      const plain = JSON.stringify(obj);
+      const cipher = encryptText(plain, pass);
+
+      renderQR(cipher);
+      setStatus(encOut, cipher, "ok");
+    } catch (e) {
+      qr.innerHTML = "";
+      setStatus(encOut, "❌ " + e.message, "bad");
+    }
+  });
+
+  btnCopy.addEventListener("click", async () => {
+    const t = (encOut.textContent || "").trim();
+    if (!t || t === "—") return;
+    try {
+      await navigator.clipboard.writeText(t);
+      alert("تم النسخ ✅");
+    } catch {
+      alert("لم أستطع النسخ تلقائيًا. انسخه يدويًا.");
+    }
+  });
+
+  function downloadQR() {
+    const img = qr.querySelector("img");
+    const cvs = qr.querySelector("canvas");
+    let dataUrl = null;
+
+    if (img && img.src) dataUrl = img.src;
+    else if (cvs) dataUrl = cvs.toDataURL("image/png");
+
+    if (!dataUrl) {
+      alert("مفيش QR جاهز للتحميل. اعمل إنشاء QR الأول.");
+      return;
+    }
+
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = "student-qr.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  btnDownload.addEventListener("click", downloadQR);
+
+  btnClearGen.addEventListener("click", () => {
+    [studentName, studentId, department, level, notes, passGen].forEach(i => i.value = "");
+    qr.innerHTML = "";
+    encOut.textContent = "—";
+    encOut.classList.remove("okBorder","badBorder");
+  });
+
+  // -------------------- Attendance Logic --------------------
+  function buildAttendanceKey(studentId, courseName, sessDate) {
+    // Unique per student + course + session date
+    return `${normalizeKey(studentId)}|${normalizeKey(courseName)}|${normalizeKey(sessDate)}`;
+  }
+
+  function isDuplicate(studentId, courseName, sessDate) {
+    const key = buildAttendanceKey(studentId, courseName, sessDate);
+    return attendance.some(r => r.key === key);
+  }
+
+  function addAttendanceRecord(studentObj) {
+    const c = getCourse();
+    const sd = getSessionDate();
+
+    if (isDuplicate(studentObj.id, c, sd)) {
+      setStatus(decStatus,
+        `⚠️ تم منع التكرار\n\nالطالب: ${studentObj.name}\nID: ${studentObj.id}\nCourse: ${c}\nSession Date: ${sd}\n\nهذا الطالب تم تسجيله بالفعل لنفس المحاضرة في نفس التاريخ.`,
+        "bad"
+      );
+      return false;
+    }
+
+    const rec = {
+      key: buildAttendanceKey(studentObj.id, c, sd),
+      studentId: studentObj.id || "",
+      name: studentObj.name || "",
+      department: studentObj.department || "",
+      level: studentObj.level || "",
+      notes: studentObj.notes || "",
+      course: c,
+      sessionDate: sd,
+      recordedAtISO: nowISO()
+    };
+
+    attendance.unshift(rec);
+    saveAttendance(attendance);
+    renderAttendanceTable();
+
+    setStatus(decStatus,
+      `✅ تم تسجيل الحضور بنجاح\n\nالاسم: ${rec.name}\nID: ${rec.studentId}\nالقسم: ${rec.department}\nالمستوى: ${rec.level}\nCourse: ${rec.course}\nSession Date: ${rec.sessionDate}\nوقت التسجيل: ${formatLocalDateTime(rec.recordedAtISO)}\n\n(تم الحفظ في LocalStorage)`,
+      "ok"
+    );
+
+    return true;
+  }
+
+  function removeAttendanceAt(index) {
+    attendance.splice(index, 1);
+    saveAttendance(attendance);
+    renderAttendanceTable();
+  }
+
+  function escapeCsv(value) {
+    const s = String(value ?? "");
+    // Escape quotes by doubling them
+    const escaped = s.replace(/"/g, '""');
+    // Wrap if contains comma/newline/quote
+    if (/[",\n\r]/.test(escaped)) return `"${escaped}"`;
+    return escaped;
+  }
+
+  function exportCSV() {
+    if (!attendance.length) {
+      alert("لا يوجد بيانات لتصديرها.");
+      return;
+    }
+
+    const headers = [
+      "#",
+      "studentId",
+      "name",
+      "department",
+      "level",
+      "course",
+      "sessionDate",
+      "recordedAt",
+      "notes"
+    ];
+
+    const rows = attendance.map((r, i) => ([
+      i + 1,
+      r.studentId,
+      r.name,
+      r.department,
+      r.level,
+      r.course,
+      r.sessionDate,
+      formatLocalDateTime(r.recordedAtISO),
+      r.notes
+    ]));
+
+    const csv = [
+      headers.map(escapeCsv).join(","),
+      ...rows.map(row => row.map(escapeCsv).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance_${(course.value||"course").replace(/\s+/g,'_')}_${(sessionDate.value||"date")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  }
+
+  btnExport.addEventListener("click", exportCSV);
+
+  btnClearAttendance.addEventListener("click", () => {
+    if (!confirm("متأكد؟ سيتم حذف كل سجل الحضور من هذا المتصفح.")) return;
+    attendance = [];
+    saveAttendance(attendance);
+    renderAttendanceTable();
+    setStatus(decStatus, "تم مسح سجل الحضور.", "ok");
+  });
+
+  function renderAttendanceTable() {
+    countPill.textContent = `${attendance.length} سجل`;
+    if (!attendance.length) {
+      attBody.innerHTML = `<tr><td colspan="10" class="muted">لا يوجد بيانات بعد.</td></tr>`;
+      return;
+    }
+
+    attBody.innerHTML = attendance.map((r, idx) => `
+      <tr>
+        <td>${idx + 1}</td>
+        <td class="mono">${r.studentId}</td>
+        <td>${r.name}</td>
+        <td>${r.department}</td>
+        <td>${r.level}</td>
+        <td>${r.course}</td>
+        <td class="mono">${r.sessionDate}</td>
+        <td>${formatLocalDateTime(r.recordedAtISO)}</td>
+        <td>${(r.notes || "").replace(/</g,"&lt;")}</td>
+        <td>
+          <button class="danger" data-del="${idx}" style="padding:8px 10px;border-radius:10px;font-weight:700">حذف</button>
+        </td>
+      </tr>
+    `).join("");
+
+    attBody.querySelectorAll("button[data-del]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.getAttribute("data-del"));
+        removeAttendanceAt(i);
+      });
+    });
+  }
+
+  // -------------------- Scanner (Camera + jsQR) --------------------
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  let stream = null;
+  let scanning = false;
+  let rafId = null;
+  let lastScannedCipher = null;
+  let lastScanAt = 0;
+
+  async function startCam() {
+    if (stream) { scanning = true; scanLoop(); return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      scanning = true;
+      scanLoop();
+      scanMsg.textContent = "✅ الكاميرا تعمل… وجّهها نحو QR.";
+    } catch (e) {
+      scanMsg.textContent =
+        "❌ فشل تشغيل الكاميرا. تأكد من السماح للمتصفح بالكاميرا وتشغيل الصفحة عبر HTTPS أو localhost.";
+    }
+  }
+
+  function stopCam() {
+    scanning = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    video.srcObject = null;
+    scanMsg.textContent = "تم إيقاف الكاميرا.";
+  }
+
+  function handleCipher(cipherText) {
+    try {
+      const pass = getScanPass();
+      const plain = decryptText(cipherText, pass);
+
+      const parsed = safeJsonParse(plain);
+      if (!parsed.ok) throw new Error("البيانات بعد فك التشفير ليست JSON صحيح.");
+
+      const studentObj = parsed.value;
+
+      // تحقق بسيط
+      if (!studentObj || !studentObj.id || !studentObj.name) {
+        throw new Error("بيانات الطالب غير مكتملة داخل الـ QR.");
+      }
+
+      // تسجيل الحضور
+      addAttendanceRecord(studentObj);
+
+    } catch (e) {
+      setStatus(decStatus, "❌ " + e.message, "bad");
+    }
+  }
+
+  function scanLoop() {
+    if (!scanning) return;
+
+    if (!video.videoWidth) {
+      rafId = requestAnimationFrame(scanLoop);
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "dontInvert"
+    });
+
+    if (code && code.data) {
+      // throttle to prevent repeated reads of same QR
+      const now = Date.now();
+      const same = (code.data === lastScannedCipher);
+      const tooSoon = (now - lastScanAt) < 2500;
+
+      if (!same || !tooSoon) {
+        lastScannedCipher = code.data;
+        lastScanAt = now;
+        scanMsg.textContent = "📌 تم التقاط QR… جاري فك التشفير وتسجيل الحضور.";
+        handleCipher(code.data);
+      } else {
+        scanMsg.textContent = "🔁 تم قراءة نفس الـ QR مؤخرًا…";
+      }
+    } else {
+      scanMsg.textContent = "🔎 جاري البحث عن QR…";
+    }
+
+    rafId = requestAnimationFrame(scanLoop);
+  }
+
+  btnStartCam.addEventListener("click", startCam);
+  btnStopCam.addEventListener("click", stopCam);
+
+  btnManualDecrypt.addEventListener("click", () => {
+    const cipher = (manualCipher.value || "").trim();
+    if (!cipher) return setStatus(decStatus, "الصق النص المشفّر أولًا.", "bad");
+    handleCipher(cipher);
+  });
+
+  // -------------------- Init --------------------
+  function initDefaults() {
+    // default session date to today
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth()+1).padStart(2,"0");
+    const dd = String(today.getDate()).padStart(2,"0");
+    sessionDate.value = `${yyyy}-${mm}-${dd}`;
+  }
+
+  window.addEventListener("load", async () => {
+    initDefaults();
+    renderAttendanceTable();
+
+    // Auto-start camera
+    await startCam();
+
+    // if browser blocked auto-start
+    if (!stream) {
+      scanMsg.textContent =
+        "⚠️ قد يمنع المتصفح تشغيل الكاميرا تلقائيًا. اضغط “تشغيل الكاميرا”. وتأكد من HTTPS/localhost.";
+    }
+  });
+</script>
+</body>
+</html>
